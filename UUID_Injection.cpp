@@ -92,6 +92,13 @@ int main(int argc, char* argv[]) {
 		printf("%u", GetLastError());
 	}
 
+	/*
+	if (EnumWindows((WNDENUMPROC)hMemory, 0) == 0)					// or Use EunmWindows
+	{
+		printf("%u", GetLastError());
+	}
+	*/
+
 	return 0;
 }
 

